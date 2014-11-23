@@ -5,16 +5,27 @@ date: "Saturday, November 22, 2014"
 output: html_document
 ---
 
-# Data Preparation
-
-```{r, echo=FALSE}
+```{r, echo=FALSE, cache=TRUE}
 # Preparation
 rm(list=ls())
 require(caret)
+require(doSNOW)
 set.seed(1663)
+cl <- makeCluster(4)
+registerDoSNOW(cl)
 har_data <- read.csv("pml-training.csv")
-inTraining <- createDataPartition(har_data$classe, p = 0.7, list = FALSE)
+```
 
+The first thing to be done is get a sense of the size of the data set.
+
+```{r}
+dim(har_data)
+```
+
+In order to have un unbiased estimation of the error of the prediction algorithm, it's important to use a method of cross-validation. Because of the large amount of data points, the data will be randomly split with 60% of the data used as the training set, and 40% for testing.
+
+```{r, cache=TRUE}
+inTraining <- createDataPartition(har_data$classe, p = 0.6, list = FALSE)
 training <- har_data[inTraining,]
 testing <- har_data[-inTraining,]
 
@@ -22,30 +33,66 @@ trainingClasse <- training$classe
 training <- subset(training, select = -classe)
 ```
 
-The first thing to be done is to get an overall idea of what the data represents. The first thing we must do is get an overall idea of what the data represents.
+As one can see, there are a large number of features in the training set. In order to make it easier to model a predictor, it will be useful to remove features with near zero variance, which have low prediction utility.
 
-```{r}
-dim(training)
-```
-
-As one can see, there are a large number of features in the training set. In order to make it easier to model a predictor, it will be useful to remove features with near zero variance, which have low prediction importance.
-
-```{r}
+```{r, cache=TRUE}
 nzv <- nearZeroVar(training)
 training <- training[, -nzv]
 dim(training)
 ```
 
-After the transformation, we removed greatly reduced the number of features. Let's get an overall idea of what the structure of the data is.
+After the transformation, the number of features were greatly reduced. The next step would be to get an overall idea of what the structure of the data.
 
-```{r}
+```{r, cache=TRUE}
 str(training)
 ```
 
-It's possible to see that some of the features present missing data points. It is, therefore, necessary to preprocess the with K-nearest-neighbors algorithm in order to be able to apply some algorithms that rely on existing data in order to function properly.
+The first columns of the training set are related to entry number, user identification, or timestamp. These variables are highly specific to the experiment, and even though the different users performing the experiments might act as blocking factors in thedata, these factors will be disconsidered because the goal is to build a predictor based on generic input.
 
-```{r}
-knnObject <- preProcess()
+```{r, cache=TRUE}
+training <- subset(training, select = -c(X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, num_window))
+```
 
+It's possible to see that some of the features present missing data points. It is, therefore, necessary to fill in the blanks with K-nearest-neighbors algorithm in order to be able to apply some algorithms that rely on existing data in order to function properly.
+
+```{r, cache=TRUE}
+knnObject <- preProcess(training, method = "knnImpute")
+knnTraining <- predict(knnObject, newdata = training)
+```
+
+Now the data has filled in missing data points, in order to have a sense of how the variance of the training set, it's helps to compute how many pricipal components can explain 80% of the variance of the data.
+
+```{r, cache=TRUE}
+pcaObject <- preProcess(knnTraining, method = "pca", thresh = 0.8)
+pcaObject
+```
+
+The variance in the data can be explained by only 14 components.
+
+```{r, cache=TRUE}
+pcaTraining <- predict(pcaObject, newdata = knnTraining)
+featurePlot(pcaTraining[, 1:4], trainingClasse, plot = "pairs")
+```
+
+By taking a look in the feature plot of four main principal components, one can see the classes of the data points seem to be separated in regions. It suggests that building a prediction model based on the pricipal components computed will have a significant prediction value. For that purpose, Random Forests will be used.
+
+```{r, cache=TRUE}
+model <- train(trainingClasse ~ ., data = pcaTraining, method = "rf")
+
+testingClasse <- testing$classe
+testing <- subset(testing, select = -classe)
+testing <- testing[, -nzv]
+testing <- subset(testing, select = -c(X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, num_window))
+knnTesting <- predict(knnObject, newdata = testing)
+pcaTesting <- predict(pcaObject, newdata = knnTesting)
+testingPrediction <- predict(model, newdata = pcaTesting)
+confusionMatrix(testingPrediction, testingClasse)
+```
+
+The prediction algorithm, when applied to the testing set, has approximately 93.54% accuracy, which makes it a good prediction algorithm.
+
+
+```{r, echo=FALSE, cache=TRUE}
+stopCluster(cl)
 ```
 
