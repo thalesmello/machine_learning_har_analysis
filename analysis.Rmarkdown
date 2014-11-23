@@ -1,0 +1,51 @@
+---
+title: "HAR Analysis"
+author: "Thales Mello"
+date: "Saturday, November 22, 2014"
+output: html_document
+---
+
+# Data Preparation
+
+```{r, echo=FALSE}
+# Preparation
+rm(list=ls())
+require(caret)
+set.seed(1663)
+har_data <- read.csv("pml-training.csv")
+inTraining <- createDataPartition(har_data$classe, p = 0.7, list = FALSE)
+
+training <- har_data[inTraining,]
+testing <- har_data[-inTraining,]
+
+trainingClasse <- training$classe
+training <- subset(training, select = -classe)
+```
+
+The first thing to be done is to get an overall idea of what the data represents. The first thing we must do is get an overall idea of what the data represents.
+
+```{r}
+dim(training)
+```
+
+As one can see, there are a large number of features in the training set. In order to make it easier to model a predictor, it will be useful to remove features with near zero variance, which have low prediction importance.
+
+```{r}
+nzv <- nearZeroVar(training)
+training <- training[, -nzv]
+dim(training)
+```
+
+After the transformation, we removed greatly reduced the number of features. Let's get an overall idea of what the structure of the data is.
+
+```{r}
+str(training)
+```
+
+It's possible to see that some of the features present missing data points. It is, therefore, necessary to preprocess the with K-nearest-neighbors algorithm in order to be able to apply some algorithms that rely on existing data in order to function properly.
+
+```{r}
+knnObject <- preProcess()
+
+```
+
